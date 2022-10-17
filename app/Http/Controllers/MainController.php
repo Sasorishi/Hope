@@ -6,14 +6,35 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
+use Exception;
 
 class MainController extends Controller
 {
-    private function readPDF() {
-        //$phpWord = new \PhpOffice\PhpWord\PhpWord();
-        $source = public_path().'/RKF - Annexe VDEF.pdf';
+    private function readWord() {
+        $source = public_path().'/file-sample_100kB.docx';
+        $phpWord = \PhpOffice\PhpWord\IOFactory::load($source);
+        $content = '';
+
+        foreach($phpWord->getSections() as $section) {
+            foreach($section->getElements() as $element) {
+                if (method_exists($element, 'getElements')) {
+                    foreach($element->getElements() as $childElement) {
+                        if (method_exists($childElement, 'getText')) {
+                            $content .= $childElement->getText() . ' ';
+                        }
+                        else if (method_exists($childElement, 'getContent')) {
+                            $content .= $childElement->getContent() . ' ';
+                        }
+                    }
+                }
+                else if (method_exists($element, 'getText')) {
+                    $content .= $element->getText() . ' ';
+                }
+            }
+        }
         
-        $phpWord = \PhpOffice\PhpWord\IOFactory::load($source, 'PDF');
+        print($content);
+        //dump($phpWord);
     }
 
     private function pdfParser() {
@@ -33,9 +54,12 @@ class MainController extends Controller
     private function controlA() {
         $workforce = false;
         $structure = false;
-        
+        $activity = false;
+        $financeStructure = false;
+        $currencyMarket = false;
+        $reorganisation = false;
 
-        if (condition) {
+        if(condition) {
             # code...
         }
 
@@ -43,14 +67,31 @@ class MainController extends Controller
             "évolution de l'effectif" => $workforce,
             "évolution de la structure" => $structure,
             "évolution de l'activité de exercice" => $activity,
-            "éléments essentiels d'évolution de la structure financière" => $financeStructure
+            "éléments essentiels d'évolution de la structure financière" => $financeStructure,
+            "évolution du marché des changes pour l'entreprise" => $currencyMarket,
+            "restructuration" => $reorganisation
         ];
 
         return $control;
     }
 
+    private function valueExists($value) {
+        switch($value) {
+            case 'value':
+                    if($value == true) {
+
+                    }
+                break;
+            
+            default:
+                # code...
+                break;
+        }
+    }
+
     public function index() {
-        $this->pdfParser();
+        //$this->pdfParser();
+        $this->readWord();
         return view('welcome');
     }
 }
