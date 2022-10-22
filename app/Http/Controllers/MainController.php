@@ -6,52 +6,91 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Routing\Controller as BaseController;
+
+use thiagoalessio\TesseractOCR\TesseractOCR;
+use Spatie\PdfToText\Pdf;
+
 use Exception;
 
 class MainController extends Controller
 {
-    private function readWord() {
-        $source = public_path().'/file-sample_100kB.docx';
-        $phpWord = \PhpOffice\PhpWord\IOFactory::load($source);
-        $content = '';
+    private function pdfParser() {
+        $parser = new \Smalot\PdfParser\Parser();
+        
+        $config = new \Smalot\PdfParser\Config();
+        $config->setFontSpaceLimit(-60);
+        $config->setDataTmFontInfoHasToBeIncluded(true);
 
-        foreach($phpWord->getSections() as $section) {
-            foreach($section->getElements() as $element) {
-                if (method_exists($element, 'getElements')) {
-                    foreach($element->getElements() as $childElement) {
-                        if (method_exists($childElement, 'getText')) {
-                            $content .= $childElement->getText() . ' ';
-                        }
-                        else if (method_exists($childElement, 'getContent')) {
-                            $content .= $childElement->getContent() . ' ';
-                        }
-                    }
+        $parser = new \Smalot\PdfParser\Parser([], $config);
+        $source = public_path().'/RKF - Annexe VDEF.pdf';
+        $pdf = $parser->parseFile($source);
+        
+        $data = $pdf->getPages()[5]->getDataTm();
+        $text = $pdf->getPages()[1]->getText();
+
+        $content = '';
+        for ($i = 0; $i < sizeOf($data); $i++) {
+            $element = $data[$i];
+            if($i <= sizeOf($data)) {
+                $content .= $element[1];
+            } else {
+                $nextElement = $data[$i + 1];
+                if ($element[0][5] + 30 > $nextElement[0][5]) {
+                    $content .= $element[1] .'\n\n';
+                } else {
+                    $content .= $element[1];
                 }
-                else if (method_exists($element, 'getText')) {
-                    $content .= $element->getText() . ' ';
+            }
+            //dump($data[$i]);
+        }
+        //echo nl2br($text);
+        //dump($content);
+        //dump($data);
+        dump($text);
+        return $content;
+    }
+
+    private function phpWord() {
+        $source = public_path().'/file-sample_100kB.rtf';
+        $phpWord = \PhpOffice\PhpWord\IOFactory::load($source, 'RTF');
+        $text = null;
+        dump($phpWord);
+        foreach ($phpWord->getSections() as $section) {
+            foreach ($section->getElements() as $element) {
+                foreach ($element->getElements() as $text) {
+                    dump($text->getText());
                 }
+                //$text .= $this->getWordText($element);
             }
         }
         
-        print($content);
-        //dump($phpWord);
+        dump($text);
     }
 
-    private function pdfParser() {
-        $parser = new \Smalot\PdfParser\Parser();
+    function getWordText($element) {
+        $result = '';
+        if ($element instanceof AbstractContainer) {
+            foreach ($element->getElements() as $element) {
+                $result .= getWordText($element);
+            }
+        } elseif ($element instanceof Text) {
+            $result .= $element->getText();
+        }
+        // and so on for other element types (see src/PhpWord/Element)
+    
+        return $result;
+    }
+
+    function pdfToText() {
         $source = public_path().'/RKF - Annexe VDEF.pdf';
-        $pdf = $parser->parseFile($source);
-        $text = $pdf->getText();
-        $data = $pdf->getPages()[7]->getDataTm();
-        //dump($text);
-        dump($data);
+        $text = (new Pdf('/usr/local/bin/pdftotext'))
+        ->setPdf($source)
+        ->text();
+
+        dump($text);
     }
 
-    private function checklist() {
-
-    }
-
-    private function controlA() {
+    private function checklist($data) {
         $workforce = false;
         $structure = false;
         $activity = false;
@@ -59,11 +98,14 @@ class MainController extends Controller
         $currencyMarket = false;
         $reorganisation = false;
 
-        if(condition) {
-            # code...
-        }
+        $modality = false;
+        $value = false;
+        $amortissement = false;
 
-        $control = [
+        $array = $this->control($data, "amortissement");
+        //$amortissement = $this->ifValueExists($array);
+        
+        $controlA = [
             "évolution de l'effectif" => $workforce,
             "évolution de la structure" => $structure,
             "évolution de l'activité de exercice" => $activity,
@@ -72,26 +114,79 @@ class MainController extends Controller
             "restructuration" => $reorganisation
         ];
 
-        return $control;
+        $controlC = [
+            "modalité" => $modality,
+            "rapprochement entre la valeur comptable" => $value,
+            'amortissement utilisé' => $amortissement
+        ];
     }
 
-    private function valueExists($value) {
-        switch($value) {
-            case 'value':
-                    if($value == true) {
+    private function control($text, $keyword) {
+        $textDelimited = $this->searchKeyWord($text, $keyword);
+        $this->ifValueExists($textDelimited, $keyword);
 
-                    }
-                break;
-            
-            default:
-                # code...
-                break;
+    }
+
+    private function searchKeyWord($text, $keyword) {
+        $pos = strpos($text, $keyword);
+        if ($pos === false) {
+            echo "The string '$keyword' was not found";
+        } else {
+            echo "The string '$keyword' was found";
+            $start = substr($text, strpos($text, $keyword), -1);
+            if (preg_match('/'.$keyword.'(.*?)\./', $start, $match) == 1) {
+                $end = $match[0];
+                //dump($match);
+            }
+            //dump($start);
+            //$fullString = $keyword.''.$end;
+            //dump($fullString);
+            return $end;
+        }
+    }
+
+    private function ifValueExists($text, $searchWord) {
+        if($text != NULL) {
+            switch ($searchWord) {
+                case 'amortissement':
+                        dump('amortissement');
+                        $words = ['mode linéaire', 'mode dégressif', 'linéaire', 'dégressif'];
+                        $this->checkMatchWord($text, $words);
+                    break;
+                
+                case 'taux amortissement':
+                        dump('taux amortissement');
+                        $words = ['matériel industriel', 'agencements', 'matériel de bureau', 'informatique mobilier'];
+                        $this->checkMatchWord($text, $words);
+                    break;
+            }
+        }
+    }
+
+    private function checkMatchWord($text, $words) {
+        $matchs = null;
+
+        for ($i = 0; $i < sizeOf($words); $i++) { 
+            if ($i == sizeOf($words)) {
+                $matchs .= $words[$i];
+            } else {
+                $matchs .= $words[$i]. ' || ';
+            }
+        }
+
+        if (preg_match('/('.$matchs.')/i', $text)) {
+            dump('controle oui');
+        } else {
+            dump('controle non');
         }
     }
 
     public function index() {
-        //$this->pdfParser();
-        $this->readWord();
+        $text = $this->pdfParser();
+        $this->checkList($text);
+        //$this->phpWord();
+        //$this->pdfToText();
+
         return view('welcome');
     }
 }
